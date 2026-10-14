@@ -109,7 +109,8 @@ async function main() {
   const eidToId = new Map(staff.filter((s) => s.eidNumber).map((s) => [s.eidNumber as string, s.id]));
 
   const subdirs = (await fsp.readdir(DIR, { withFileTypes: true })).filter((e) => e.isDirectory());
-  let renamed = 0, attached = 0, unresolved = 0;
+  const renamed = 0;
+  let attached = 0, unresolved = 0;
   const byType: Record<string, number> = {};
 
   console.log(`\n${APPLY ? "APPLYING" : "DRY RUN"} — reconciling by EID\n`);

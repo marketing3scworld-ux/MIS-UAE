@@ -33,10 +33,13 @@ export function StaffFilters({
   );
 
   // Reflect a q set elsewhere (e.g. the top-bar search) back into the box, so the
-  // debounce below doesn't revert it.
-  useEffect(() => {
+  // debounce below doesn't revert it. Adjusted during render rather than in an
+  // effect, per https://react.dev/learn/you-might-not-need-an-effect.
+  const [prevUrlQ, setPrevUrlQ] = useState(urlQ);
+  if (urlQ !== prevUrlQ) {
+    setPrevUrlQ(urlQ);
     setQ(urlQ);
-  }, [urlQ]);
+  }
 
   // Debounced search.
   useEffect(() => {

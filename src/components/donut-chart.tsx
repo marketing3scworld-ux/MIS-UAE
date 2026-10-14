@@ -25,15 +25,17 @@ export function DonutChart({
   const r = (size - thickness) / 2;
   const C = 2 * Math.PI * r;
   const cx = size / 2;
-  let offset = 0;
+  const lens = segments.map((s) => (s.value / total) * C);
+  // Start of each arc = sum of the arcs before it.
+  const offsets = lens.map((_, i) => lens.slice(0, i).reduce((a, l) => a + l, 0));
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="block" role="img">
       <g transform={`rotate(-90 ${cx} ${cx})`}>
         <circle cx={cx} cy={cx} r={r} fill="none" stroke={track} strokeWidth={thickness} />
         {segments.map((s, i) => {
-          const len = (s.value / total) * C;
-          const el = (
+          const len = lens[i];
+          return (
             <circle
               key={i}
               cx={cx}
@@ -43,13 +45,11 @@ export function DonutChart({
               stroke={s.color}
               strokeWidth={thickness}
               strokeDasharray={`${len} ${C - len}`}
-              strokeDashoffset={-offset}
+              strokeDashoffset={-offsets[i]}
             >
               <title>{`${s.label}: ${s.value.toLocaleString()}`}</title>
             </circle>
           );
-          offset += len;
-          return el;
         })}
       </g>
       {centerTop ? (
