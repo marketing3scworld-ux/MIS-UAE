@@ -1,0 +1,195 @@
+# BME MIS — CI/CD pipeline
+#
+#   every push / PR  ──►  CI: lint · typecheck · migrations vs schema · seed · build · smoke test
+#   push to main     ──►  CD: ship the CI build to the server over SSH (gated by the
+#                             `production` environment — add required reviewers there
+#                             if you want a manual approval before each deploy)
+#
+# Server setup + the secrets this needs: see DEPLOYMENT.md → "CI/CD (GitHub Actions)".
+
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # package-lock.json is written by npm 11 — npm 10 (Node 20/22) rejects it in `npm ci`.
+  NODE_VERSION: "24"
+
+jobs:
+  ci:
+    name: Lint, typecheck, migrate, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bme
+          POSTGRES_PASSWORD: ci_only_pw
+          POSTGRES_DB: bme_mis
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bme -d bme_mis"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://bme:ci_only_pw@localhost:5432/bme_mis?schema=public
+      NEXTAUTH_SECRET: ci-only-not-a-real-secret
+      NEXTAUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      UPLOAD_DIR: ${{ github.workspace }}/.ci-uploads
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # npm 11 skips @prisma/client's postinstall, so generate explicitly (see DEPLOYMENT.md §2).
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Apply migrations to a fresh database
+        run: npx prisma migrate deploy
+
+      # Fails if schema.prisma was edited without a matching migration.
+      - name: Check migrations match schema.prisma
+        run: |
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code \
+          || { echo "::error::schema.prisma has changes with no migration. Run 'npx prisma migrate dev' and commit the migration."; exit 1; }
+
+      - name: Seed
+        run: npm run seed
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test
+        run: |
+          mkdir -p "$UPLOAD_DIR"
+          npm run start > app.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:3000/login && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/login | grep -q "BME MIS" \
+            || { echo "::error::/login did not render"; cat app.log; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/dashboard)
+          [ "$code" = "307" ] || { echo "::error::/dashboard should redirect anonymous users (got $code)"; cat app.log; exit 1; }
+          echo "Smoke test passed"
+
+      # Ship exactly what was tested. node_modules is NOT included — sharp/Prisma are
+      # native, so the server installs its own from the same lockfile.
+      - name: Package release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          tar --exclude=./node_modules --exclude=./.git --exclude=./.next/cache \
+              --exclude=./.ci-uploads --exclude=./uploads --exclude=./app.log \
+              --exclude=./release.tgz \
+              -czf release.tgz .
+
+      - name: Upload release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release.tgz
+          retention-days: 14
+
+  deploy:
+    name: Deploy to production
+    needs: ci
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.APP_URL || 'https://bmemisae.3sc.tech' }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      APP_DIR: ${{ vars.APP_DIR || '/srv/bme-mis' }}
+
+    steps:
+      - name: Check deploy secrets
+        id: cfg
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
+            echo "::warning::Deploy skipped — DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY / DEPLOY_KNOWN_HOSTS are not set on the 'production' environment. See DEPLOYMENT.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          name: release
+
+      - name: Configure SSH
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host target
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            Port $DEPLOY_PORT
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Upload release to server
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          tar -xzf release.tgz ./scripts/deploy/remote-deploy.sh
+          scp release.tgz target:/tmp/bme-mis-${GITHUB_SHA}.tgz
+          scp scripts/deploy/remote-deploy.sh target:/tmp/bme-mis-deploy-${GITHUB_SHA}.sh
+
+      - name: Install, migrate, switch, restart
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          ssh target "APP_DIR='$APP_DIR' RELEASE_ID='$GITHUB_SHA' \
+            RUN_PREFLIGHT='${{ vars.RUN_PREFLIGHT || '1' }}' RUN_SEED='${{ vars.RUN_SEED || '0' }}' \
+            bash /tmp/bme-mis-deploy-${GITHUB_SHA}.sh"

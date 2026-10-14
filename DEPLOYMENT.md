@@ -145,6 +145,74 @@ After this the app already contains all staff, users, and documents.
 
 ---
 
+## 9. CI/CD (GitHub Actions)
+
+`.github/workflows/ci-cd.yml` runs on every push and pull request:
+
+| Stage | What it checks |
+| --- | --- |
+| **CI** (every branch / PR) | `npm ci` → `prisma generate` + `validate` → ESLint → `tsc --noEmit` → `prisma migrate deploy` on a fresh Postgres 16 → **schema drift check** (fails if `schema.prisma` changed without a migration) → seed → `next build` → smoke test (`/login` renders, `/dashboard` redirects anonymous users) |
+| **CD** (push to `main` only) | Uploads the exact build CI tested to the server over SSH and runs `scripts/deploy/remote-deploy.sh` |
+
+CI uses **Node 24** because `package-lock.json` needs npm 11 (`npm ci` on npm 10 fails with
+*"Missing: @swc/helpers from lock file"*). The server can stay on Node 20/22 — the deploy script
+falls back to a one-off `npx npm@11 ci` there.
+
+### What a deploy does on the server
+```
+/srv/bme-mis/                     (APP_DIR)
+├── shared/.env                   real env — create once; UPLOAD_DIR must be ABSOLUTE
+├── releases/<git-sha>/           one per deploy, last 5 kept
+└── current -> releases/<sha>     what pm2 runs (ecosystem.config.cjs)
+```
+1. Unpack into `releases/<sha>`, link `shared/.env`, `npm ci`, `prisma generate`
+2. `prisma migrate deploy` (and `npm run seed` if `RUN_SEED=1`)
+3. `npm run preflight` (unless `RUN_PREFLIGHT=0`) — a broken `.env` stops the deploy here
+4. Point `current` at the new release and `pm2 startOrReload`
+5. Health check: `/login` must answer **and** the pm2 process must be online and not restarting.
+   If not, `current` is pointed back at the previous release and pm2 restarted.
+
+Steps 1–3 fail without touching the running app. Note that migrations from step 2 are not
+rolled back on a failed health check — keep migrations additive (as they are today).
+
+### One-time server setup
+```bash
+sudo mkdir -p /srv/bme-mis/shared && sudo chown deploy: /srv/bme-mis -R   # "deploy" = SSH user
+cp .env.example /srv/bme-mis/shared/.env && nano /srv/bme-mis/shared/.env  # UPLOAD_DIR=/abs/path
+npm i -g pm2 && pm2 startup                                                # survive reboots
+# If the app already runs under pm2 from a manual install, remove that entry once so the
+# pipeline's definition (cwd = /srv/bme-mis/current) takes over:
+pm2 delete bme-mis
+```
+Give the deploy user an SSH key pair: add the public key to `~/.ssh/authorized_keys` on the server.
+
+### GitHub configuration
+Repo → **Settings → Environments → New environment `production`**. Optionally add *Required
+reviewers* there to approve each deploy by hand. Then add to that environment:
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | server hostname or IP |
+| `DEPLOY_USER` | SSH user (owns `/srv/bme-mis`, can run pm2) |
+| `DEPLOY_SSH_KEY` | the **private** key (full PEM text) |
+| `DEPLOY_KNOWN_HOSTS` | output of `ssh-keyscan -p <port> <host>` (pins the host key) |
+| `DEPLOY_PORT` | *optional*, default `22` |
+
+| Variable (optional) | Default |
+| --- | --- |
+| `APP_DIR` | `/srv/bme-mis` |
+| `APP_URL` | `https://bmemisae.3sc.tech` (link shown on the deploy) |
+| `RUN_PREFLIGHT` | `1` |
+| `RUN_SEED` | `0` |
+
+Until `DEPLOY_HOST`/`DEPLOY_USER` are set the deploy job is skipped with a warning, so CI stays green.
+
+**Rollback by hand:** re-run an older successful *CI/CD* run on `main` (Actions → run → *Re-run
+all jobs*), or on the server: `ln -sfn /srv/bme-mis/releases/<old-sha> /srv/bme-mis/current &&
+pm2 reload bme-mis`.
+
+---
+
 ## Quick reference
 | Thing | Value |
 | --- | --- |
