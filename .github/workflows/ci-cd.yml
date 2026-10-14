@@ -109,22 +109,27 @@ jobs:
           [ "$code" = "307" ] || { echo "::error::/dashboard should redirect anonymous users (got $code)"; cat app.log; exit 1; }
           echo "Smoke test passed"
 
+      - name: Stop smoke-test server
+        if: always()
+        run: pkill -f "next start" || true; pkill -f next-server || true
+
       # Ship exactly what was tested. node_modules is NOT included — sharp/Prisma are
       # native, so the server installs its own from the same lockfile.
+      # Written to RUNNER_TEMP: a tarball inside the folder being packed makes tar
+      # exit 1 with "file changed as we read it".
       - name: Package release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           tar --exclude=./node_modules --exclude=./.git --exclude=./.next/cache \
               --exclude=./.ci-uploads --exclude=./uploads --exclude=./app.log \
-              --exclude=./release.tgz \
-              -czf release.tgz .
+              -czf "$RUNNER_TEMP/release.tgz" .
 
       - name: Upload release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: release
-          path: release.tgz
+          path: ${{ runner.temp }}/release.tgz
           retention-days: 14
 
   deploy:
