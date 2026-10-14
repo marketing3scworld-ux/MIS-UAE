@@ -1,0 +1,447 @@
+/* ─────────────────────────────────────────────────────────────
+   BME MIS — Liquid Glass design system (PRESENTATION ONLY).
+   Every glass surface consumes these tokens; components must not
+   hand-roll rgba values. Three elevations only.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* Rim-light direction — mirrored under [dir="rtl"] so the highlight and
+     the gold trailing-edge flip with the layout. */
+  --glass-rim-angle: 135deg;
+
+  /* Three glass elevations (navy-tinted, derived from BME navy #184170). */
+  --glass-base-bg: rgba(13, 27, 48, 0.55);
+  --glass-base-blur: blur(24px) saturate(160%);
+
+  --glass-raised-bg: rgba(20, 38, 66, 0.45);
+  --glass-raised-blur: blur(32px) saturate(180%);
+
+  --glass-overlay-bg: rgba(24, 45, 78, 0.6);
+  --glass-overlay-blur: blur(40px) saturate(180%);
+
+  /* Shadows are tinted navy, never black. Inner highlight sits on the top edge. */
+  --glass-shadow: 0 8px 32px rgba(6, 15, 30, 0.45);
+  --glass-shadow-hover: 0 16px 48px rgba(6, 15, 30, 0.6);
+  --glass-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+[dir="rtl"] {
+  --glass-rim-angle: 225deg;
+}
+
+/* ── The edge treatment: a directional rim, not a flat 1px border ── */
+.glass {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius, 1rem);
+  box-shadow: var(--glass-shadow), var(--glass-inner-highlight);
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--glass-rim-angle),
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.08) 30%,
+    rgba(255, 255, 255, 0.02) 60%,
+    rgba(211, 175, 55, 0.1) 100% /* faint gold kiss on the trailing edge */
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* ── Three elevations ── */
+.glass-base {
+  background: var(--glass-base-bg);
+  backdrop-filter: var(--glass-base-blur);
+  -webkit-backdrop-filter: var(--glass-base-blur);
+}
+.glass-raised {
+  background: var(--glass-raised-bg);
+  backdrop-filter: var(--glass-raised-blur);
+  -webkit-backdrop-filter: var(--glass-raised-blur);
+}
+.glass-overlay {
+  background: var(--glass-overlay-bg);
+  backdrop-filter: var(--glass-overlay-blur);
+  -webkit-backdrop-filter: var(--glass-overlay-blur);
+}
+
+/* Nested glass is forbidden (perf + look): a child of a glass surface uses a
+   plain translucent fill with NO second blur. */
+.glass .glass-child {
+  background: rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* ── Restrained motion for interactive cards ── */
+.glass-interactive {
+  transition:
+    transform 180ms cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.glass-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow-hover), var(--glass-inner-highlight);
+  will-change: transform;
+}
+.glass-interactive:hover::before {
+  background: linear-gradient(
+    var(--glass-rim-angle),
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.12) 30%,
+    rgba(255, 255, 255, 0.03) 60%,
+    rgba(211, 175, 55, 0.14) 100%
+  );
+}
+
+/* ── Liquid displacement — HERO surfaces only (dashboard header, login card).
+   Applied to a background-sampling layer, never to text content. ── */
+.liquid-lens {
+  filter: url(#liquid-lens);
+}
+
+/* Hero surfaces (login card, dashboard renewals panel): a displaced specular
+   sheen gives the "liquid" refraction character. Sits on a decorative overlay,
+   never on text; degrades to a soft corner highlight where SVG filters aren't
+   supported. */
+.liquid-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 85% at 16% -12%, rgba(255, 255, 255, 0.16), transparent 52%),
+    radial-gradient(120% 90% at 108% 118%, rgba(211, 175, 55, 0.09), transparent 55%);
+  filter: url(#liquid-lens);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+/* ── True liquid-glass surface (macOS-style). RESERVED for one hero surface
+   (login card) — the SVG displacement lens is GPU-heavy.
+     ::before  — the bright inset rim (edge catches light, faint gold kiss).
+     ::after   — a backdrop-sampling layer run through filter:url(#liquid-glass),
+                 which REFRACTS the scene behind the card (real edge magnification).
+   Chromium refracts; Safari/Firefox fall back to the plain blur below. ── */
+.liquid-glass {
+  position: relative;
+  isolation: isolate;
+  /* Reads as glass on a FLAT backdrop via its own light, not refraction:
+     a diagonal specular sweep over a translucent frosted-navy pane, lifted off
+     the page by a soft elevation shadow. */
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(180deg, rgba(38, 64, 108, 0.44), rgba(13, 26, 48, 0.5));
+  box-shadow:
+    0 30px 70px -24px rgba(2, 7, 18, 0.85),
+    0 2px 10px rgba(2, 7, 18, 0.5);
+}
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Crisp bright top-left edge, a soft overall inner glow, a subtle dark
+     bottom-right to give the pane thickness, and a faint gold kiss. */
+  box-shadow:
+    inset 1.5px 1.5px 0 -1px rgba(255, 255, 255, 0.9),
+    inset 0 0 5px 1px rgba(255, 255, 255, 0.45),
+    inset -2px -3px 8px -3px rgba(6, 15, 30, 0.55),
+    inset 0 0 30px rgba(211, 175, 55, 0.06);
+}
+.liquid-glass::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  /* Frost layer: backdrop-filter frosts whatever is behind the card. On a flat
+     backdrop this reads as clean frosted glass; the displacement lens is kept so
+     any texture behind (or a future rich backdrop) ripples for free. */
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  filter: url(#liquid-glass);
+  -webkit-filter: url(#liquid-glass);
+}
+/* Readability guard where backdrop-filter is unavailable: opaque the panel. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .liquid-glass {
+    background-color: rgba(18, 34, 60, 0.92);
+  }
+}
+
+/* ── 3D glass icon tile — a small glossy, dimensional chip that holds a KPI
+   icon (dashboard). Tint comes from --ic (the KPI/status colour); a top-light
+   gradient + specular gloss + bright rim + coloured glow give it real depth,
+   the icon sits on top in white. ── */
+.glass-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7rem;
+  color: #fff;
+  background:
+    radial-gradient(115% 115% at 28% 20%, color-mix(in srgb, var(--ic), white 35%), transparent 58%),
+    linear-gradient(160deg, color-mix(in srgb, var(--ic), white 6%), color-mix(in srgb, var(--ic), black 30%));
+  box-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.9),
+    inset -1px -1.5px 2px -1px rgba(0, 0, 0, 0.5),
+    0 5px 12px -3px color-mix(in srgb, var(--ic), transparent 45%),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.glass-icon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 45%);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+.glass-icon svg {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+/* Lift the tile when its card is hovered. */
+.lift:hover .glass-icon {
+  transform: translateY(-1px) scale(1.05);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glass-icon,
+  .lift:hover .glass-icon {
+    transform: none;
+  }
+}
+
+/* ── Layered liquid glass (lucasromerodb technique) — for a hero surface that
+   sits over texture (the dashboard renewals card over its glow). Four stacked
+   layers, bottom→top: refraction · tint · shine(rim) · content. Wrap the card's
+   content in .lg-content and give the wrapper a border-radius. ── */
+.lg-wrap {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 6px rgba(2, 7, 18, 0.28), 0 0 22px rgba(2, 7, 18, 0.18);
+}
+.lg-effect {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  backdrop-filter: blur(3px) saturate(150%);
+  -webkit-backdrop-filter: blur(3px) saturate(150%);
+  filter: url(#glass-distortion);
+  -webkit-filter: url(#glass-distortion);
+}
+.lg-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  /* Translucent navy so the refracted glow shows through and the card stays
+     on-theme (the light reference tint would clash with the dark dashboard). */
+  background: rgba(20, 38, 66, 0.4);
+}
+.lg-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 2px 2px 1px 0 rgba(255, 255, 255, 0.45),
+    inset -1px -1px 1px 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 30px rgba(211, 175, 55, 0.05);
+}
+.lg-content {
+  position: relative;
+  z-index: 3;
+}
+
+/* A contained blue glow that sits behind an in-flow hero card (dashboard
+   renewals panel) so its frosted surface refracts blue — image-2 look. Place
+   inside a `position: relative` wrapper, with the card above it at z-10. */
+.hero-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(72% 130% at 76% 42%, rgba(37, 99, 235, 0.42), transparent 62%);
+  filter: blur(26px);
+}
+
+/* ── Frosted-glass hero band (dashboard summary): a bright inset rim + soft lift,
+   fine frosted grain (::before) and a glossy top-left sheen (::after) layered over
+   the panel's own gradient. Put the band's content at z-10 so it stays above. ── */
+.hero-frost {
+  position: relative;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 22px 44px -22px rgba(12, 26, 51, 0.55);
+}
+.hero-frost::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='hn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23hn)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+.hero-frost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 15% -20%, rgba(255, 255, 255, 0.22), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 40%);
+}
+
+/* ── Frosted "pipeline" (top bar): a bright glass top-edge + soft float shadow,
+   a subtle top sheen (::before) and fine frosted grain (::after) over the navy
+   glass. Pairs with .glass-base. ── */
+.pipeline-frost {
+  position: relative;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 12px 30px -14px rgba(6, 15, 30, 0.55);
+}
+.pipeline-frost::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 60%);
+}
+.pipeline-frost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='pn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23pn)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* Sticky, frosted table header — the ONE sanctioned nested backdrop-filter:
+   rows blur as they scroll under it within the card's scroll pane. */
+.table-head th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(11, 24, 44, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   The composed background scene (glass needs something to refract).
+   One fixed layer + one grain layer, both behind all content.
+   ───────────────────────────────────────────────────────────── */
+.app-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* deep navy gradient + two large off-canvas light sources (blue TR, gold BL) */
+  background:
+    radial-gradient(58% 48% at 100% -4%, rgba(37, 99, 235, 0.14), transparent 60%),
+    radial-gradient(52% 52% at -4% 104%, rgba(211, 175, 55, 0.08), transparent 60%),
+    linear-gradient(180deg, #050b16 0%, #0b1830 52%, #10233f 100%);
+}
+.app-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* ── Fallback: no backdrop-filter support → raise opacity, drop the blur. ── */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-base {
+    background: rgba(13, 27, 48, 0.92);
+  }
+  .glass-raised {
+    background: rgba(20, 38, 66, 0.92);
+  }
+  .glass-overlay {
+    background: rgba(24, 45, 78, 0.94);
+  }
+}
+
+/* ── Phones and tablets: solid chrome, no glass ──────────────────────────────
+   The top bar and the slide-in menu are translucent by design on a desktop, where
+   they sit over the app's own dark canvas. On a small screen they sit over white
+   content and most mobile browsers throttle backdrop-filter, so the bar washed out
+   and the menu was barely readable. Below the sidebar breakpoint they are painted
+   solid navy instead. */
+@media (max-width: 1023px) {
+  .app-chrome {
+    background: #0c2039 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .app-chrome::before,
+  .app-chrome::after {
+    display: none !important;
+  }
+}
+
+/* ── Accessibility: kill transforms, keep opacity fades. ── */
+@media (prefers-reduced-motion: reduce) {
+  .glass-interactive {
+    transition: box-shadow 180ms ease;
+  }
+  .glass-interactive:hover {
+    transform: none;
+    will-change: auto;
+  }
+}
+
+/* ── Print / export: solid white panels, no glass. ── */
+@media print {
+  .app-scene,
+  .app-grain {
+    display: none !important;
+  }
+  .glass,
+  .glass-base,
+  .glass-raised,
+  .glass-overlay {
+    background: #fff !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+  }
+  .glass::before {
+    display: none !important;
+  }
+}

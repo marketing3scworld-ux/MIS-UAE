@@ -1,0 +1,36 @@
+{
+  "app": {
+    "name": "MIS-UAE",
+    "tagline": "Staff & Documents"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "staff": "Staff",
+    "documents": "Document Expiry",
+    "newProfile": "New Profile",
+    "documentUpload": "Document Upload",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "deployments": "Deployments",
+    "reports": "Reports",
+    "scheduleStaff": "Schedule staff",
+    "clientsProjects": "Clients",
+    "timesheets": "Timesheets",
+    "howItWorks": "How it works"
+  },
+  "topbar": {
+    "searchPlaceholder": "Search staff by name, EID, mobile…",
+    "notifications": "Notifications",
+    "signOut": "Sign out"
+  },
+  "login": {
+    "title": "BME MIS",
+    "subtitle": "Management Information System",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
+  }
+}

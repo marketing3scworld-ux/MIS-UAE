@@ -1,0 +1,383 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────
+   BME brand + functional status tokens.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  --color-brand-navy: #184170;
+  --color-brand-navy-deep: #0c2039; /* stays dark — used for text on gold */
+  --color-brand-gold: #d3af37;
+  --color-brand-gold-alt: #e6c65b;
+  --color-brand-slate: #283742;
+  --color-brand-yellow: #feca16;
+  --color-brand-sky: #6fb2ee; /* light accent for links on the dark canvas */
+
+  /* Document status palette. Spec §6 requires a traffic light — "red = expired,
+     yellow = expiring soon, green = valid, matching how BME already colour-codes
+     this manually" — so it deliberately mirrors the Excel sheet rather than the
+     softer teal/rose scheme used elsewhere in the theme. Shades are the -600 steps
+     so the text stays legible on the light content background. */
+  --color-status-valid: #16a34a; /* green  — valid */
+  --color-status-expiring: #d97706; /* yellow — expiring soon */
+  --color-status-expired: #dc2626; /* red    — expired */
+  --color-status-missing: #64748b; /* slate  — missing / not provided */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BME "deep-navy glass" theme. Frosted translucent surfaces over a
+   moody navy canvas with a vivid blue glow — real glassmorphism,
+   navy + white + gold, on-brand.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+  /* Tighter, more professional corners (was 1.25rem — too pill-like). Drives
+     rounded-sm/md/lg/xl app-wide: inputs ~6px, cards ~14px. */
+  --radius: 0.625rem;
+
+  --background: #0a1626;
+  --foreground: #e8eef7;
+
+  /* Glass card = subtle white translucency; the frost blur is applied to
+     every `.bg-card` further down, so all existing cards become glass. */
+  --card: rgb(255 255 255 / 0.055);
+  --card-foreground: #e8eef7;
+
+  --popover: #10233c;
+  --popover-foreground: #e8eef7;
+
+  --primary: #184170;
+  --primary-foreground: #ffffff;
+
+  --secondary: rgb(255 255 255 / 0.07);
+  --secondary-foreground: #e8eef7;
+
+  --muted: rgb(255 255 255 / 0.06);
+  --muted-foreground: #9db2c9;
+
+  --accent: #d3af37;
+  --accent-foreground: #0c2039;
+
+  --destructive: #f87171;
+  --destructive-foreground: #0c2039;
+
+  --border: rgb(255 255 255 / 0.1); /* light hairline — reads on dark glass */
+  --input: rgb(255 255 255 / 0.14);
+  --ring: #d3af37;
+
+  --sidebar: #0c2039;
+  --sidebar-foreground: #c8d6e6;
+  --sidebar-primary: #d3af37;
+  --sidebar-primary-foreground: #0c2039;
+  --sidebar-accent: rgb(255 255 255 / 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #d3af37;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+  body {
+    /* Base colour only — the composed scene (gradient + light sources) is the
+       fixed `.app-scene` layer in the root layout (see styles/glass.css). */
+    background-color: #050b16;
+    color: var(--foreground);
+    font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  }
+
+  /* Form fields → dark glass with light text, regardless of any bg-white
+     utility (keeps the white logo chips untouched — those are spans). */
+  /* Inset glass: darker than the card, with an inner shadow. */
+  input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    background-color: rgba(5, 12, 24, 0.5) !important;
+    color: var(--foreground);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  }
+  /* Gold focus ring + border brighten. */
+  input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: rgba(211, 175, 55, 0.6);
+    box-shadow: 0 0 0 2px rgba(211, 175, 55, 0.45), inset 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  /* Read-only / disabled fields read dimmer than editable ones. */
+  input[readonly],
+  textarea[readonly],
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    background-color: rgb(255 255 255 / 0.03) !important;
+    color: var(--muted-foreground) !important;
+  }
+  /* Native dropdown list stays readable. */
+  select option {
+    background-color: #10233c;
+    color: #e8eef7;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Accent remap for the dark canvas: `text-brand-navy` (dark) is used
+   throughout as a LINK colour and would vanish on dark — remap it to
+   the light sky accent. Gold-button text uses `text-brand-navy-deep`
+   instead (not remapped), so it stays dark on gold.
+   Unlayered → wins over Tailwind's utility layer.
+   ───────────────────────────────────────────────────────────── */
+.text-brand-navy {
+  color: var(--color-brand-sky);
+}
+.hover\:text-brand-navy:hover {
+  color: var(--color-brand-sky);
+}
+
+/* Every card surface adopts the raised-glass token + directional rim from
+   styles/glass.css (one shared hook — components don't hand-roll rgba). */
+.bg-card {
+  position: relative;
+  border-color: transparent; /* flat hairline off; the rim is the ::before */
+  background: var(--glass-raised-bg);
+  background-clip: padding-box;
+  backdrop-filter: var(--glass-raised-blur);
+  -webkit-backdrop-filter: var(--glass-raised-blur);
+  box-shadow: var(--glass-shadow), var(--glass-inner-highlight);
+}
+.bg-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--glass-rim-angle),
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.08) 30%,
+    rgba(255, 255, 255, 0.02) 60%,
+    rgba(211, 175, 55, 0.1) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Hover-lift (unlayered so the hover shadow wins over the base card shadow). */
+.lift {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.lift:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 28px 60px -26px rgb(0 0 0 / 0.7),
+    inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+
+/* Sidebar / top bar now consume the glass token system (styles/glass.css:
+   .glass-base + directional edge rims), so their bespoke classes are gone. */
+
+/* Slim, on-brand scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.28);
+  background-clip: content-box;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LIGHT THEME — scoped to the authenticated app CONTENT (<main class="app-light">).
+   Semantic tokens are redefined here; because Tailwind utilities resolve
+   var(--card)/var(--foreground)/… at use-site, every card, text, border and input
+   inside <main> flips to light automatically. The navy sidebar + top bar sit
+   OUTSIDE this scope (and /login is a different route), so they stay dark.
+   ───────────────────────────────────────────────────────────── */
+.app-light {
+  color-scheme: light;
+  --background: #eef2f8;
+  --foreground: #1e293b;
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+  --primary: #184170;
+  --primary-foreground: #ffffff;
+  --secondary: #e6ebf3;
+  --secondary-foreground: #334155;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #d3af37;
+  --accent-foreground: #0c2039;
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #dbe3ee;
+  --ring: #2f6bd8;
+
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Links remapped to sky for the dark canvas → a readable blue on light. */
+.app-light .text-brand-navy,
+.app-light .hover\:text-brand-navy:hover {
+  color: #2f6bd8;
+}
+
+/* Cards → clean white with a light hairline + soft shadow (drop the dark glass). */
+.app-light .bg-card {
+  background: #ffffff;
+  border-color: #e6ebf3;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.07);
+}
+.app-light .bg-card::before {
+  display: none;
+}
+.app-light .lift:hover {
+  box-shadow: 0 12px 26px -14px rgb(15 23 42 / 0.28);
+}
+
+/* Form fields → light. These live in @layer base (with higher specificity than
+   the dark-theme base rules) because layered !important beats unlayered !important
+   — an unlayered override here would silently lose and leave fields dark. */
+@layer base {
+  .app-light input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  .app-light select,
+  .app-light textarea {
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+    border: 1px solid #d8e0ec;
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+  .app-light input:not([type="file"]):not([type="checkbox"]):not([type="radio"])::placeholder,
+  .app-light textarea::placeholder {
+    color: #94a3b8;
+  }
+  .app-light input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):focus,
+  .app-light select:focus,
+  .app-light textarea:focus {
+    outline: none;
+    border-color: #2f6bd8;
+    box-shadow: 0 0 0 3px rgb(47 107 216 / 0.16), inset 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+  .app-light input:not([type="file"]):not([type="checkbox"]):not([type="radio"])[readonly],
+  .app-light input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):disabled,
+  .app-light textarea[readonly],
+  .app-light textarea:disabled,
+  .app-light select:disabled {
+    background-color: #eef2f7 !important;
+    color: #64748b !important;
+    border-color: #e2e8f0;
+  }
+  .app-light select option {
+    background-color: #ffffff;
+    color: #1e293b;
+  }
+}
+
+/* Sticky table header (styles/glass.css) → light. */
+.app-light .table-head th {
+  background: #f8fafc;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Light scrollbars for the app content (the dark-theme white thumbs vanish here). */
+.app-light {
+  scrollbar-color: #cbd5e1 transparent;
+}
+.app-light *::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  background-clip: content-box;
+}
+.app-light *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+}
+
+/* Frosted login inputs — in @layer base with the full :not() chain so they win
+   over the dark-theme base input rules (layered !important + higher specificity). */
+@layer base {
+  .login-panel input:not([type="file"]):not([type="checkbox"]):not([type="radio"]) {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+  .login-panel input:not([type="file"]):not([type="checkbox"]):not([type="radio"])::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .login-panel input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.65);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+  }
+}

@@ -1,0 +1,32 @@
+# BME MIS — local PostgreSQL 16 for development.
+# Credentials here must match DATABASE_URL in .env.
+# Data persists in the named volume `bme_pgdata` (survives container restarts).
+#
+# Usage:
+#   docker compose up -d     # start Postgres in the background
+#   docker compose ps        # check health
+#   docker compose down      # stop (keeps data)
+#   docker compose down -v   # stop AND delete data volume (full reset)
+
+services:
+  db:
+    image: postgres:16
+    container_name: bme-mis-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bme
+      POSTGRES_PASSWORD: bme_local_dev_pw
+      POSTGRES_DB: bme_mis
+    ports:
+      - "5432:5432"
+    volumes:
+      - bme_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bme -d bme_mis"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  bme_pgdata:
+    name: bme_mis_pgdata

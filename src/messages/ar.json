@@ -1,0 +1,36 @@
+{
+  "app": {
+    "name": "MIS-UAE",
+    "tagline": "الموظفون والمستندات"
+  },
+  "nav": {
+    "dashboard": "لوحة المعلومات",
+    "staff": "الموظفون",
+    "documents": "انتهاء صلاحية المستندات",
+    "newProfile": "ملف جديد",
+    "documentUpload": "رفع المستندات",
+    "notifications": "الإشعارات",
+    "settings": "الإعدادات",
+    "deployments": "عمليات النشر",
+    "reports": "التقارير",
+    "scheduleStaff": "جدولة الموظفين",
+    "clientsProjects": "العملاء",
+    "timesheets": "سجلات الدوام",
+    "howItWorks": "كيف يعمل النظام"
+  },
+  "topbar": {
+    "searchPlaceholder": "ابحث عن موظف بالاسم أو رقم الهوية أو الجوال…",
+    "notifications": "الإشعارات",
+    "signOut": "تسجيل الخروج"
+  },
+  "login": {
+    "title": "نظام BME",
+    "subtitle": "نظام المعلومات الإدارية",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "signIn": "تسجيل الدخول",
+    "signingIn": "جارٍ تسجيل الدخول…",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور"
+  }
+}

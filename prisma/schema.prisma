@@ -1,0 +1,488 @@
+// BME MIS — Prisma schema (single source of truth for the data model).
+// Phase 1: Staff Profile & Document Repository.
+//
+// Designed against the REAL columns in data/STAFF DATEBASE-MASTER LIST 2026.xlsx
+// (Sheet1, 16 cols, ~3,065 rows) and the Phase-1 spec.
+//
+// Deliberately LEAN — the following were explicitly deferred by the client and
+// are NOT modelled: first/middle/last name split, DOB column, marital status,
+// religion, email (on Staff), join date, contract type, department/designation/
+// grade, employee photo, residence visa, NOC, COVID cert. Do not add without a
+// request.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum EmploymentStatus {
+  ACTIVE // generates document alerts
+  INACTIVE // Exited — never generates alerts
+}
+
+enum ApprovalStatus {
+  PENDING // created by Data-Entry, not yet approved
+  APPROVED
+}
+
+enum Role {
+  DATA_ENTRY
+  OPERATIONS
+  HR_ADMIN
+  FINANCE
+  SYSTEM_ADMIN
+}
+
+// Expiry-bearing + supporting document slots. EID is two files (front/back).
+enum DocumentType {
+  EID_FRONT
+  EID_BACK
+  PASSPORT
+  VISA // UAE residence visa (has expiry)
+  OHC // Occupational Health Card
+  BFHC // Basic Food Hygiene Certificate
+  SHORT_TERM_AGREEMENT // short-term employment agreement (has expiry)
+  BANK_PROOF // IBAN certificate / bank letter (optional)
+  PHOTO // staff passport photo (shown next to the name; not in the doc grid)
+  NOC // No-Objection Certificate from the sponsor (has expiry)
+}
+
+// Per-document handling state (the "status dropdown" in §4).
+enum DocHandlingStatus {
+  WITH_EMPLOYEE
+  WITH_HR
+  SUBMITTED
+}
+
+// Computed document status (engine §6). Stored only on Notification for context;
+// on Staff it is always derived at read time, never persisted.
+enum DocStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+  MISSING
+}
+
+// Delivery channel. WHATSAPP / SMS intentionally omitted now — the app code
+// exposes a channel interface so they can be added later without a schema change
+// beyond extending this enum.
+enum NotificationChannel {
+  IN_SYSTEM
+  EMAIL
+}
+
+enum NotificationState {
+  UNVIEWED
+  VIEWED
+  RESOLVED
+}
+
+// ─────────────────────────── Users / RBAC ───────────────────────────
+
+model User {
+  id           Int     @id @default(autoincrement())
+  email        String  @unique
+  passwordHash String
+  name         String
+  role         Role    @default(DATA_ENTRY)
+  isActive     Boolean @default(true)
+
+  // Recoverable copy of the password so a Super Admin can look it up in Settings
+  // when someone forgets theirs (client request). AES-256-GCM, keyed off
+  // NEXTAUTH_SECRET — see src/lib/secret-box.ts. passwordHash stays the ONLY
+  // thing sign-in checks; this column is never read during authentication.
+  //
+  // TRADE-OFF, on purpose: anyone with the database (or a database backup) can
+  // read every user's password. Null for accounts created before this column
+  // existed and for any password not set through the app — those read as
+  // "not recorded" until a Super Admin sets a new one.
+  passwordEnc String?
+
+  // §7: the "Operations Head" recipient for document alerts. Kept as a flag so
+  // we stay at the 5 roles in §9 rather than inventing a 6th.
+  isOperationsHead Boolean @default(false)
+
+  // Super Admin: a per-user flag on top of the System Admin role. Only Super
+  // Admins may add/edit/remove user accounts. Regular System Admins get the full
+  // rest of Settings (engine, dropdowns, email) but a read-only user list.
+  isSuperAdmin Boolean @default(false)
+
+  // §7 escalation: unviewed alerts escalate by email to this user's manager.
+  manager   User?  @relation("UserManager", fields: [managerId], references: [id])
+  managerId Int?
+  reports   User[] @relation("UserManager")
+
+  // §9: optional TOTP 2FA (otplib), encouraged for Finance/Admin.
+  totpSecret  String?
+  totpEnabled Boolean @default(false)
+
+  // Back-relations
+  staffCreated      Staff[]         @relation("StaffCreatedBy")
+  staffUpdated      Staff[]         @relation("StaffUpdatedBy")
+  staffHandled      Staff[]         @relation("StaffHandledBy")
+  documentsUploaded StaffDocument[] @relation("DocUploadedBy")
+  notifications     Notification[]  @relation("NotifRecipient")
+
+  // Phase 2 workflow trail
+  deploymentsCreated  Deployment[]      @relation("DeploymentCreatedBy")
+  deploymentsUpdated  Deployment[]      @relation("DeploymentUpdatedBy")
+  deploymentsVerified Deployment[]      @relation("DeploymentVerifiedBy")
+  deploymentsApproved Deployment[]      @relation("DeploymentApprovedBy")
+  deploymentAudits    DeploymentAudit[] @relation("DeploymentAuditUser")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+// ─────────────────────────── Staff (core profile §3) ───────────────────────────
+
+model Staff {
+  // "Staff No." — system-generated, sequential, never editable.
+  id Int @id @default(autoincrement())
+
+  fullName   String // as per EID (English); uppercase-normalized on save
+  arabicName String? // full name in Arabic, as printed on the EID
+
+  // Category / Location / Nationality / Bank are stored as free strings so
+  // combined values (COMMIS/FOH, ATR/JCH) and free entry are preserved. The
+  // Settings-managed *Option tables below drive the dropdown choices.
+  category          String? // BARBACK, BARTENDER, COMMIS, FOH, STEWARD/HOUSEKEEPING, ...
+  location          String? // SERVICE / work location: ATR, AL DAITH, MANDARIN ORIENTAL, ...
+  residenceLocation String? // where the staff lives (separate from the work site)
+  nationality       String?
+
+  mobileNumber String? // stored with country code (default +971); loose validation
+
+  // Nullable: attendance-sourced records have no EID yet. Postgres allows many
+  // NULLs under a unique index, so the 354 EID-verified profiles stay unique
+  // while incomplete shells carry NULL until HR supplies the ID.
+  eidNumber String?   @unique // 784-YYYY-NNNNNNN-N; drives duplicate detection
+  eidDigits String? // eidNumber with dashes stripped — powers dash-insensitive search
+  eidExpiry DateTime?
+
+  ohcExpiry  DateTime? // many staff have none
+  bfhcExpiry DateTime?
+
+  passportNumber String? // frequently absent in source (no column in master list)
+  passportExpiry DateTime? // source PASSPORT column holds the EXPIRY date
+
+  visaExpiry DateTime? // residence visa expiry — tracked on the profile; syncs from the VISA doc slot
+
+  gender Gender?
+
+  employmentStatus EmploymentStatus @default(ACTIVE) // gates notifications
+
+  // Active/Inactive normally follows the documents (lib/staff-query.ts). An admin can
+  // override that for one person — someone on leave, or kept active while a renewal is
+  // in progress. NULL = follow the documents, which is the default for everyone.
+  statusOverride   EmploymentStatus?
+  statusNote       String? // why it was overridden, shown next to the badge
+
+  // Blacklist (fraud / misconduct). Flagged staff are called out across the app;
+  // the reason is free text (e.g. "document fraud — Jul 2026").
+  blacklisted     Boolean @default(false)
+  blacklistReason String?
+
+  bankAccountTitle String?
+  iban             String? // validate AE + 21 digits, but allow save-anyway
+  bankName         String?
+
+  // Missing/Expired documents = COMPUTED per §6, never a column here.
+
+  // §7: Operations user responsible for this staff's alerts ("handled by").
+  handledBy   User? @relation("StaffHandledBy", fields: [handledById], references: [id])
+  handledById Int?
+
+  // §9: approval gate so the Data-Entry "edit before approval only" rule bites.
+  approvalStatus ApprovalStatus @default(PENDING)
+
+  // §11: created_by / updated_by / timestamps on all records (no audit module).
+  createdBy   User?    @relation("StaffCreatedBy", fields: [createdById], references: [id])
+  createdById Int?
+  updatedBy   User?    @relation("StaffUpdatedBy", fields: [updatedById], references: [id])
+  updatedById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents     StaffDocument[]
+  notifications Notification[]
+
+  // Phase 2: shifts this person is scheduled for, and shifts where they stood in
+  // for someone else.
+  deployments    Deployment[] @relation("DeploymentStaff")
+  replacementFor Deployment[] @relation("DeploymentReplacement")
+
+  @@index([employmentStatus])
+  @@index([category])
+  @@index([location])
+  @@index([mobileNumber])
+  @@index([fullName])
+  @@index([eidDigits])
+}
+
+// ─────────────────────────── Documents (§4) ───────────────────────────
+
+model StaffDocument {
+  id      Int   @id @default(autoincrement())
+  staff   Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId Int
+
+  type DocumentType
+
+  // Stored via a storage-service interface (local uploads/ now, S3 later).
+  filePath String
+  fileName String
+  mimeType String
+  fileSize Int
+
+  expiryDate     DateTime?
+  handlingStatus DocHandlingStatus @default(WITH_EMPLOYEE)
+
+  // Renewals never hard-delete: the old file is versioned out (isCurrent=false).
+  version   Int     @default(1)
+  isCurrent Boolean @default(true)
+
+  uploadedBy   User?    @relation("DocUploadedBy", fields: [uploadedById], references: [id])
+  uploadedById Int?
+  uploadedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([staffId, type, isCurrent])
+}
+
+// ─────────────────────────── Notifications (§7 / §8) ───────────────────────────
+
+model Notification {
+  id      Int   @id @default(autoincrement())
+  staff   Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId Int
+
+  recipient   User @relation("NotifRecipient", fields: [recipientId], references: [id])
+  recipientId Int
+
+  documentType DocumentType // which document the alert concerns
+  docStatus    DocStatus // EXPIRED / EXPIRING_SOON / MISSING
+  message      String
+
+  channel NotificationChannel @default(IN_SYSTEM)
+  state   NotificationState   @default(UNVIEWED)
+
+  // §7 recurring + escalation bookkeeping.
+  cycleCount     Int       @default(1) // times re-notified while unresolved
+  escalated      Boolean   @default(false) // emailed to manager yet?
+  lastNotifiedAt DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([recipientId, state])
+  @@index([staffId, documentType])
+}
+
+// ─────────────────────────── Settings-managed dropdown lists (§7 Settings) ───────────────────────────
+// Staff stores the chosen value as a string; these tables are the editable
+// option sets shown in the Settings UI. Seeded from the migrated data.
+
+model CategoryOption {
+  id        Int     @id @default(autoincrement())
+  value     String  @unique
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+// SERVICE location — the work site (ATR, JCH, Mandarin Oriental Downtown, …).
+model LocationOption {
+  id        Int     @id @default(autoincrement())
+  value     String  @unique
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+// RESIDENCE location — where the staff member lives. Deliberately a SEPARATE, short
+// list (the seven emirates plus Al Ain) rather than the venue list above: a person
+// lives in Sharjah, not at "Mandarin Oriental Downtown".
+model ResidenceOption {
+  id        Int     @id @default(autoincrement())
+  value     String  @unique
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+model NationalityOption {
+  id     Int     @id @default(autoincrement())
+  value  String  @unique
+  active Boolean @default(true)
+}
+
+model BankOption {
+  id     Int     @id @default(autoincrement())
+  value  String  @unique
+  active Boolean @default(true)
+}
+
+// ─────────────────────────── App settings (§7) ───────────────────────────
+// Key/value config: expiry window (default 30), re-notify interval (default 3),
+// escalation threshold cycles (default 3), etc.
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────── Clients (Phase 2) ───────────────────────────
+// A client company. Their events/venues are Projects; staff are scheduled onto a
+// Project, never onto the Client directly.
+
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+}
+
+// ═══════════════════════ Phase 2: Scheduling → Timesheets → Approval ═══════════════════════
+//
+// One Deployment row = ONE staff member, ONE shift, ONE project. It carries BOTH the
+// schedule and the actuals, so "scheduled vs actual" is a comparison within a single
+// row rather than a join between two tables that can drift apart. Everything the
+// spec asks for — deployment report, payroll hours, chargeable hours, variance —
+// is an aggregation over this one table.
+
+enum DeploymentStatus {
+  SCHEDULED // created in advance, staff assigned
+  DEPLOYED // the event happened / staff turned up
+  TIMESHEET_SUBMITTED // Operations entered the actual in/out
+  TIMESHEET_VERIFIED // Supervisor checked it
+  APPROVED // signed off — feeds payroll and client billing
+  CANCELLED // called off; excluded from every report and from overlap checks
+}
+
+// A client's project or event. Deployments hang off this, never off Client directly,
+// so one client can run several concurrent venues/events.
+model Project {
+  id       Int    @id @default(autoincrement())
+  name     String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  clientId Int
+
+  location String? // default venue; a deployment may override it
+  active   Boolean @default(true)
+
+  deployments Deployment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, name])
+  @@index([clientId])
+}
+
+model Deployment {
+  id Int @id @default(autoincrement())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId Int
+  staff     Staff   @relation("DeploymentStaff", fields: [staffId], references: [id], onDelete: Restrict)
+  staffId   Int
+
+  // The operational day (UTC midnight). Kept separate from startAt because a night
+  // shift can run past midnight and must still report under the day it belongs to.
+  eventDate DateTime
+  // The venue's own timesheet number (the 4-digit "SR. No." printed on their sheet),
+  // so a recorded shift can be traced back to the paper it came from.
+  timesheetNo Int?
+  location  String?
+  shift     String? // "Morning" / "Evening" / "Split" — free text, driven by ShiftOption
+  duty      String? // what they are actually doing on site
+  category  String? // position AT DEPLOYMENT TIME; the staff profile may change later
+
+  // ── Scheduled ──
+  startAt      DateTime
+  endAt        DateTime
+  breakMinutes Int      @default(0)
+
+  status DeploymentStatus @default(SCHEDULED)
+
+  // ── Actual (filled after the event) ──
+  actualIn           DateTime?
+  actualOut          DateTime?
+  actualBreakMinutes Int?
+  noShow             Boolean   @default(false)
+
+  // Someone who covered for a no-show. The actual hours belong to THIS person when
+  // set, which is what makes the replacement visible in the variance report.
+  replacementStaff   Staff? @relation("DeploymentReplacement", fields: [replacementStaffId], references: [id])
+  replacementStaffId Int?
+
+  notes String?
+
+  // ── Workflow trail ──
+  createdBy    User?     @relation("DeploymentCreatedBy", fields: [createdById], references: [id])
+  createdById  Int?
+  updatedBy    User?     @relation("DeploymentUpdatedBy", fields: [updatedById], references: [id])
+  updatedById  Int?
+  submittedAt  DateTime?
+  verifiedBy   User?     @relation("DeploymentVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedById Int?
+  verifiedAt   DateTime?
+  approvedBy   User?     @relation("DeploymentApprovedBy", fields: [approvedById], references: [id])
+  approvedById Int?
+  approvedAt   DateTime?
+
+  audits DeploymentAudit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventDate])
+  @@index([staffId, eventDate])
+  @@index([projectId, eventDate])
+  @@index([status])
+}
+
+// Every field-level change, so an edit after approval can be traced to a person.
+// Written by the server actions, never by the UI.
+model DeploymentAudit {
+  id           Int        @id @default(autoincrement())
+  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  deploymentId Int
+
+  user   User? @relation("DeploymentAuditUser", fields: [userId], references: [id])
+  userId Int?
+
+  action   String // created | updated | submitted | verified | approved | reopened | cancelled
+  field    String?
+  oldValue String?
+  newValue String?
+  at       DateTime @default(now())
+
+  @@index([deploymentId, at])
+}
+
+// Settings-managed shift list, same pattern as the other dropdowns.
+model ShiftOption {
+  id        Int     @id @default(autoincrement())
+  value     String  @unique
+  startTime String? // "09:00" — prefills the form
+  endTime   String? // "18:00"
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
